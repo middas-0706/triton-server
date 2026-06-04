@@ -1152,6 +1152,19 @@ FROM {} AS min_container
             argmap["GPU_BASE_IMAGE"]
         )
 
+    # When an SDK image is provided, declare it as a stage so the production
+    # image can install the tritonclient build it carries.
+    if argmap["SDK_IMAGE"] is not None:
+        df += """
+############################################################################
+##  SDK image
+############################################################################
+FROM {} AS sdk
+
+""".format(
+            argmap["SDK_IMAGE"]
+        )
+
     df += """
 ############################################################################
 ##  Production stage: Create container with just inference server executable
@@ -1177,6 +1190,15 @@ RUN find /opt/tritonserver/python -maxdepth 1 -type f -name \\
     "tritonfrontend-*.whl" | xargs -I {{}} pip install --upgrade {{}}[{FLAGS.triton_wheels_dependencies_group}]
 
 RUN pip3 install -r python/openai/requirements.txt
+
+"""
+    # Install the tritonclient build carried by the SDK stage.
+    if argmap["SDK_IMAGE"] is not None:
+        df += """
+COPY --from=sdk /workspace/install/python/ /tmp/tritonclient_pkgs/
+RUN find /tmp/tritonclient_pkgs/ -maxdepth 1 -type f -name "tritonclient-*any*.whl" \\
+        -exec pip3 install --upgrade {}[all] \\; \\
+    && rm -rf /tmp/tritonclient_pkgs/
 
 """
     if not FLAGS.no_core_build:
@@ -1547,6 +1569,7 @@ def create_build_dockerfiles(
         "TRITON_CONTAINER_VERSION": FLAGS.container_version,
         "BASE_IMAGE": base_image,
         "INFERENCE_IMAGE": inference_image,
+        "SDK_IMAGE": images["sdk"] if "sdk" in images else None,
         "DCGM_VERSION": FLAGS.dcgm_version,
     }
 
@@ -2334,7 +2357,7 @@ if __name__ == "__main__":
         "--image",
         action="append",
         required=False,
-        help='Use specified Docker image in build as <image-name>,<full-image-name>. <image-name> can be "base", "gpu-base", or "pytorch".',
+        help='Use specified Docker image in build as <image-name>,<full-image-name>. <image-name> can be "base", "gpu-base", "pytorch", or "sdk". When "sdk" is specified, the tritonclient build it carries is installed into the inference image.',
     )
 
     parser.add_argument(
@@ -2684,7 +2707,7 @@ if __name__ == "__main__":
             len(parts) != 2, "--image must specify <image-name>,<full-image-registry>"
         )
         fail_if(
-            parts[0] not in ["base", "gpu-base", "pytorch", "inference"],
+            parts[0] not in ["base", "gpu-base", "pytorch", "inference", "sdk"],
             "unsupported value for --image",
         )
         log('image "{}": "{}"'.format(parts[0], parts[1]))
