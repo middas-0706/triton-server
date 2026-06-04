@@ -82,6 +82,16 @@ FROM {} AS min_container
             images["gpu-min"]
         )
 
+    # When an SDK image is provided, declare it as a stage so the final image can
+    # install the tritonclient build it carries.
+    if "sdk" in images:
+        df += """
+FROM {} AS sdk
+
+""".format(
+            images["sdk"]
+        )
+
     df += """
 FROM {}
 
@@ -152,6 +162,20 @@ def add_requested_caches(ddir, dockerfile_name, caches):
         df += """
 # Top-level /opt/tritonserver/caches not copied so need to explicitly set permissions here
 RUN chown triton-server:triton-server /opt/tritonserver/caches
+"""
+    with open(os.path.join(ddir, dockerfile_name), "a") as dfile:
+        dfile.write(df)
+
+
+def add_tritonclient(ddir, dockerfile_name):
+    # Install the tritonclient build carried by the SDK stage into the composed
+    # image.
+    df = """
+# Install the tritonclient build from the SDK image.
+COPY --from=sdk /workspace/install/python/ /tmp/tritonclient_pkgs/
+RUN find /tmp/tritonclient_pkgs/ -maxdepth 1 -type f -name "tritonclient-*any*.whl" \\
+        -exec pip3 install --upgrade {}[all] \\; \\
+    && rm -rf /tmp/tritonclient_pkgs/
 """
     with open(os.path.join(ddir, dockerfile_name), "a") as dfile:
         dfile.write(df)
@@ -399,10 +423,11 @@ if __name__ == "__main__":
         action="append",
         required=False,
         help="Use specified Docker image to generate Docker image. Specified as "
-        '<image-name>,<full-image-name>. <image-name> can be "min", "gpu-min" '
-        'or "full". Both "min" and "full" need to be specified at the same time.'
-        'This will override "--container-version". "gpu-min" is needed for '
-        "CPU-only container to copy PyTorch deps.",
+        '<image-name>,<full-image-name>. <image-name> can be "min", "gpu-min", '
+        '"sdk" or "full". Both "min" and "full" need to be specified at the same '
+        'time. This will override "--container-version". "gpu-min" is needed for '
+        'CPU-only container to copy PyTorch deps. When "sdk" is specified, the '
+        "tritonclient build from that image is installed into the composed image.",
     )
     parser.add_argument(
         "--enable-gpu",
@@ -474,7 +499,7 @@ if __name__ == "__main__":
                 "--image must specific <image-name>,<full-image-registry>",
             )
             fail_if(
-                parts[0] not in ["min", "full", "gpu-min"],
+                parts[0] not in ["min", "full", "gpu-min", "sdk"],
                 "unsupported image-name '{}' for --image".format(parts[0]),
             )
             log('image "{}": "{}"'.format(parts[0], parts[1]))
@@ -513,6 +538,8 @@ if __name__ == "__main__":
     add_requested_backends(FLAGS.work_dir, dockerfile_name, FLAGS.backend)
     add_requested_repoagents(FLAGS.work_dir, dockerfile_name, FLAGS.repoagent)
     add_requested_caches(FLAGS.work_dir, dockerfile_name, FLAGS.cache)
+    if "sdk" in images:
+        add_tritonclient(FLAGS.work_dir, dockerfile_name)
     end_dockerfile(FLAGS.work_dir, dockerfile_name, argmap)
 
     if not FLAGS.dry_run:
