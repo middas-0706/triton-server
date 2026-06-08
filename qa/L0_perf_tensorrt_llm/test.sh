@@ -99,7 +99,7 @@ build_gpt2_tensorrt_engine
 prepare_model_repository
 
 # Install perf_analyzer
-pip3 install tritonclient
+pip3 install perf_analyzer
 
 ARCH="amd64"
 STATIC_BATCH=1
