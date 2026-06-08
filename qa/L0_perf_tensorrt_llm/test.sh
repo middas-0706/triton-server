@@ -29,6 +29,7 @@ RET=0
 BASE_DIR=$(pwd)
 NUM_GPUS=${NUM_GPUS:=1}
 TENSORRTLLM_BACKEND_REPO_TAG=${TENSORRTLLM_BACKEND_REPO_TAG:="main"}
+TRITON_REPO_ORG=${TRITON_REPO_ORG:="https://github.com/triton-inference-server"}
 TRT_ROOT="/usr/local/tensorrt"
 
 MODEL_NAME="gpt2_tensorrt_llm"
